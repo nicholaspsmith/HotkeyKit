@@ -76,7 +76,14 @@ public final class HotkeyTap {
     }
 
     public func stop() {
-        if let port = tap { CGEvent.tapEnable(tap: port, enable: false) }
+        if let port = tap {
+            CGEvent.tapEnable(tap: port, enable: false)
+            // Dropping the last Swift reference does not tear down the
+            // kernel-side tap registration — without an explicit invalidate,
+            // every stop() leaves a permanent disabled entry in the session's
+            // tap table (visible via CGGetEventTapList).
+            CFMachPortInvalidate(port)
+        }
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
         }
