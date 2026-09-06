@@ -2,6 +2,8 @@
 
 <p align="center"><img src="docs/mascot.png" width="160" alt="HotkeyKit mascot, from the Menubarn widget library"></p>
 
+<p align="center">Part of the <a href="https://widgets.nicksmith.software">Menubarn</a> widget library.</p>
+
 A small, reusable Swift package for **intercepting global keyboard and media
 keys** on macOS and remapping them to your own actions. It owns a `CGEventTap`,
 matches incoming events against a declarative set of bindings, and lets you
