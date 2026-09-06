@@ -55,6 +55,13 @@ tap.start()
 tap and recorder are thin OS glue exercised manually (they need real events and
 Accessibility permission).
 
+## Why not a SwiftBar plugin?
+
+HotkeyKit exists for what plugin scripts can never do: own a `CGEventTap` and
+intercept, remap or swallow keyboard and media keys system-wide. It pairs with
+[StatusItemKit](https://github.com/nicholaspsmith/StatusItemKit), whose README
+has the full [comparison with SwiftBar](https://github.com/nicholaspsmith/StatusItemKit#why-not-swiftbar).
+
 ## The menu-bar suite
 
 One of the two frameworks behind a suite of macOS menu-bar apps. They share
