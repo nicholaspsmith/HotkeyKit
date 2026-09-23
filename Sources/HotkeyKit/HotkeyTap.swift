@@ -25,6 +25,8 @@ public final class HotkeyTap {
     private let onMatch: MatchHandler
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private let keyboards = KeyboardRegistry()
+    private var swallowed = SwallowedKeys()
 
     public init(bindings: [Binding] = [], onMatch: @escaping MatchHandler) {
         self.bindings = bindings
@@ -53,9 +55,12 @@ public final class HotkeyTap {
     public func start() -> Bool {
         guard tap == nil else { return true }
 
-        // keyDown (10) + NX_SYSDEFINED (14, system-defined media keys).
+        // keyDown (10) + keyUp (11, to swallow the release of a swallowed
+        // press) + NX_SYSDEFINED (14, system-defined media keys).
         let mask: CGEventMask =
-            (1 << CGEventType.keyDown.rawValue) | (1 << 14)
+            (1 << CGEventType.keyDown.rawValue)
+            | (1 << CGEventType.keyUp.rawValue)
+            | (1 << 14)
 
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         guard let port = CGEvent.tapCreate(
@@ -109,15 +114,20 @@ public final class HotkeyTap {
             return passthrough
         }
 
-        let modifiers = Modifiers(cgFlags: event.flags)
+        let modifiers: Modifiers
         let kind: InputKind
         var isRepeat = false
 
-        if type == .keyDown {
+        if type == .keyUp {
+            let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+            return swallowed.release(code) ? nil : passthrough
+        } else if type == .keyDown {
             let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             kind = .key(code)
+            modifiers = Modifiers(cgFlags: event.flags, keyCode: code)
             isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         } else {
+            modifiers = Modifiers(cgFlags: event.flags)
             // System-defined: decode the media-key payload via NSEvent.
             guard let ns = NSEvent(cgEvent: event), ns.subtype.rawValue == 8 else {
                 return passthrough
@@ -131,17 +141,32 @@ public final class HotkeyTap {
             kind = .mediaKey(mediaCode)
         }
 
-        let signature = EventSignature(kind: kind, modifiers: modifiers)
+        let signature = EventSignature(
+            kind: kind, modifiers: modifiers,
+            fromAppleKeyboard: keyboards.isAppleKeyboard(event: event)
+        )
         guard let binding = bindings.first(where: { $0.matches(signature) }) else {
             return passthrough
         }
 
         let shouldFire = !isRepeat || binding.repeatsOnHold
-        if shouldFire {
-            return onMatch(binding.token) ? nil : passthrough
+        if shouldFire && !onMatch(binding.token) {
+            return passthrough
         }
-        // A held repeat we chose not to act on: still consume it so the captured
-        // key never leaks through to the OS mid-hold.
+        // Either the consumer swallowed the press, or a held repeat we chose not
+        // to act on: consume it so the captured key never leaks through to the
+        // OS mid-hold — and remember to eat the release as well.
+        if case .key(let code) = kind { swallowed.swallowed(code) }
         return nil
     }
+}
+
+/// Keys whose press the tap swallowed, so their release is swallowed too.
+struct SwallowedKeys {
+    private var codes: Set<CGKeyCode> = []
+
+    mutating func swallowed(_ code: CGKeyCode) { codes.insert(code) }
+
+    /// True iff this release belongs to a swallowed press (and should be eaten).
+    mutating func release(_ code: CGKeyCode) -> Bool { codes.remove(code) != nil }
 }

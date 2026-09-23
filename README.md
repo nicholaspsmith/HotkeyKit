@@ -26,10 +26,11 @@ a future window manager can reuse the same engine.
 | Type | Purpose |
 |------|---------|
 | `Trigger` | A physical activation: `.key(CGKeyCode, Modifiers)` or `.mediaKey(Int32, Modifiers)` (NX media-key code). `Codable`. |
-| `Modifiers` | Normalized `OptionSet` (`control`/`option`/`command`/`shift`/`fn`) with `init(cgFlags:)` / `cgFlags` mapping that ignores caps-lock/numeric-pad/device bits. |
-| `Binding` | `Trigger` → opaque `token: String`, plus `repeatsOnHold`. `matches(_:)` does exact-modifier matching. |
-| `EventSignature` / `InputKind` | Normalized incoming event, so match logic is pure and unit-tested. |
-| `HotkeyTap` | Owns the `CGEventTap` (session tap, head-insert). `start()`/`stop()`, `setBindings(_:)`, `isTrusted`, `requestTrust()`, auto re-arm on system disable, media-key decoding, repeat suppression. `onMatch(token) -> Bool` returns `true` to swallow. |
+| `Modifiers` | Normalized `OptionSet` (`control`/`option`/`command`/`shift`/`fn`) with `init(cgFlags:)` / `cgFlags` mapping that ignores caps-lock/numeric-pad/device bits. `init(cgFlags:keyCode:)` also drops `fn` on F1–F20, because macOS sets that flag on every F-key event from every keyboard (even boards with no fn key), so an F-key binding is written without it. |
+| `Binding` | `Trigger` → opaque `token: String`, plus `repeatsOnHold` and a `scope` (`.anyKeyboard`, or `.nonAppleKeyboards` to remap keys Apple boards already handle in hardware without stealing fn+F1 from the built-in keyboard). `matches(_:)` does exact-modifier matching. |
+| `EventSignature` / `InputKind` | Normalized incoming event (kind, modifiers, `fromAppleKeyboard`), so match logic is pure and unit-tested. |
+| `KeyboardRegistry` / `KeyboardIdentity` | Which keyboard sent an event: the HID sender's IORegistry ID (`CGEventField` 87) → its `VendorID` / `Built-In` properties, cached per device. Apple = built-in or vendor `0x05AC` / `0x004C`; no sender (software-posted) counts as Apple so scoped bindings fail closed. |
+| `HotkeyTap` | Owns the `CGEventTap` (session tap, head-insert). `start()`/`stop()`, `setBindings(_:)`, `isTrusted`, `requestTrust()`, auto re-arm on system disable, media-key decoding, repeat suppression, and the keyUp of a swallowed press is swallowed too. `onMatch(token) -> Bool` returns `true` to swallow. |
 | `TriggerRecorder` | Captures the next key/media key while a prefs window is focused → a `Trigger` (local monitor, no extra permission). |
 
 ## Using it
@@ -41,6 +42,8 @@ let tap = HotkeyTap(
     bindings: [
         Binding(token: "backlight.up",   trigger: .mediaKey(2, .control)),  // Ctrl+BrightnessUp
         Binding(token: "backlight.down", trigger: .mediaKey(3, .control)),  // Ctrl+BrightnessDown
+        // F1 on a third-party board only; fn+F1 on the MacBook keyboard stays F1.
+        Binding(token: "brightness.down", trigger: .key(122, []), scope: .nonAppleKeyboards),
     ],
     onMatch: { token in
         handle(token)        // do the work

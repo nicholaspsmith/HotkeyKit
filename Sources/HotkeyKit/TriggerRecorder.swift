@@ -41,16 +41,16 @@ public final class TriggerRecorder {
     }
 
     private static func trigger(from event: NSEvent) -> Trigger? {
-        let modifiers = Modifiers(cgFlags: event.cgEvent?.flags ?? [])
+        let flags = event.cgEvent?.flags ?? []
         switch event.type {
         case .keyDown:
-            return .key(event.keyCode, modifiers)
+            return .key(event.keyCode, Modifiers(cgFlags: flags, keyCode: event.keyCode))
         case .systemDefined where event.subtype.rawValue == 8:
             let data1 = event.data1
             let mediaCode = Int32((data1 & 0xFFFF_0000) >> 16)
             let keyState = ((data1 & 0x0000_FFFF) & 0xFF00) >> 8
             guard keyState == 0x0A else { return nil }   // press only
-            return .mediaKey(mediaCode, modifiers)
+            return .mediaKey(mediaCode, Modifiers(cgFlags: flags))
         default:
             return nil
         }
