@@ -30,6 +30,28 @@ public struct Modifiers: OptionSet, Codable, Hashable, Sendable {
         self = m
     }
 
+    /// Like `init(cgFlags:)`, but for a standard-key event: macOS sets the
+    /// secondary-fn flag on every function-key event (F1–F20) from every
+    /// keyboard, including boards with no fn key, so on those keycodes the
+    /// flag says nothing and is dropped. Bindings on F-keys are therefore
+    /// declared without `.fn`.
+    public init(cgFlags: CGEventFlags, keyCode: CGKeyCode) {
+        self.init(cgFlags: cgFlags)
+        if Self.isFunctionKey(keyCode) { remove(.fn) }
+    }
+
+    /// The ANSI keycodes of F1–F20.
+    public static func isFunctionKey(_ code: CGKeyCode) -> Bool {
+        functionKeyCodes.contains(code)
+    }
+
+    private static let functionKeyCodes: Set<CGKeyCode> = [
+        122, 120, 99, 118, 96,      // F1–F5
+        97, 98, 100, 101, 109,      // F6–F10
+        103, 111, 105, 107, 113,    // F11–F15
+        106, 64, 79, 80, 90,        // F16–F20
+    ]
+
     /// Reconstruct `CGEventFlags` containing only the tracked modifiers.
     public var cgFlags: CGEventFlags {
         var f: CGEventFlags = []
