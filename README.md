@@ -99,6 +99,25 @@ git clone https://github.com/nicholaspsmith/MacOS-Dev-Environment-Setup.git
 cd MacOS-Dev-Environment-Setup && ./bootstrap.sh --all
 ```
 
+## Releasing
+
+Every push to `main` is a release. Before pushing, add a dated
+`## [X.Y.Z] - YYYY-MM-DD` section to the top of [`CHANGELOG.md`](CHANGELOG.md)
+(minor for features, patch for fixes; turn a waiting `## [Unreleased]` into
+it). When it reaches `main`, GitHub tags `vX.Y.Z` and publishes the section as
+a release titled `vX.Y.Z`. Without a new version:
+
+- a push is refused locally by the `pre-push` hook;
+- a pull request **cannot merge** — `release / check` is required on `main`;
+- a push that reaches `main` anyway fails the release workflow.
+
+The one exception is `[no release]` in the tip commit's message, for changes
+nothing a user runs (setup, CI, developer docs): it passes every check with no
+version bump and no tag. Never tag or create a release by hand, and never
+`gh pr merge --admin` past a failing check — fix the PR. After merging, `git pull` for the tag. On a fresh clone, re-arm the hook with
+`../StatusItemKit/scripts/release/adopt.sh --hooks-only`.
+See [StatusItemKit — Releases](https://github.com/nicholaspsmith/StatusItemKit#releases-every-push-is-one) for the whole rule.
+
 ## License
 
 Copyright (c) 2026 Nicholas Smith. Licensed under the
