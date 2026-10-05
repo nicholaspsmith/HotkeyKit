@@ -4,20 +4,24 @@
 
 <p align="center">Part of <strong><a href="https://menumon.nicksmith.software">Menumon</a></strong>.</p>
 
-A small, reusable Swift package for **intercepting global keyboard and media
-keys** on macOS and remapping them to your own actions. It owns a `CGEventTap`,
-matches incoming events against a declarative set of bindings, and lets you
-**swallow** the original event (e.g. stop a brightness key from changing the
-display) or pass it through.
+A small Swift package for **intercepting global keyboard and media keys** on
+macOS and remapping them to your own actions. It owns a `CGEventTap`, matches
+incoming events against a declarative set of bindings, and either
+**swallows** the original event (so a brightness key no longer changes the
+display, say) or passes it through.
 
-Domain-agnostic by design: it deals only in opaque action *tokens* — it never
-knows whether a token means "keyboard backlight up" or "snap window left". The
-first consumer is [KeyLight](https://github.com/nicholaspsmith/keylight-menubar);
-a future window manager can reuse the same engine.
+It is domain-agnostic: bindings carry opaque action *tokens*, and HotkeyKit
+never knows whether a token means "keyboard backlight up" or "snap window
+left". [KeyLight](https://github.com/nicholaspsmith/keylight-menubar),
+[Monitor Lizard](https://github.com/nicholaspsmith/monitor-lizard-menubar),
+[Menu Crane](https://github.com/nicholaspsmith/menu-crane),
+[Apollo Monitor](https://github.com/nicholaspsmith/apollo-monitor-menubar) and
+[MacRecorder](https://github.com/nicholaspsmith/MacRecorder) use it.
 
 ## Requirements
 
 - macOS **13+**
+- Swift 5.9
 - The host app must be **trusted for Accessibility** for the tap to receive and
   alter events.
 
@@ -26,12 +30,12 @@ a future window manager can reuse the same engine.
 | Type | Purpose |
 |------|---------|
 | `Trigger` | A physical activation: `.key(CGKeyCode, Modifiers)` or `.mediaKey(Int32, Modifiers)` (NX media-key code). `Codable`. |
-| `Modifiers` | Normalized `OptionSet` (`control`/`option`/`command`/`shift`/`fn`) with `init(cgFlags:)` / `cgFlags` mapping that ignores caps-lock/numeric-pad/device bits. `init(cgFlags:keyCode:)` also drops `fn` on F1–F20, because macOS sets that flag on every F-key event from every keyboard (even boards with no fn key), so an F-key binding is written without it. |
-| `Binding` | `Trigger` → opaque `token: String`, plus `repeatsOnHold` and a `scope` (`.anyKeyboard`, or `.nonAppleKeyboards` to remap keys Apple boards already handle in hardware without stealing fn+F1 from the built-in keyboard). `matches(_:)` does exact-modifier matching. |
+| `Modifiers` | Normalized `OptionSet` (`control`/`option`/`command`/`shift`/`fn`) with `init(cgFlags:)` / `cgFlags` mapping that ignores caps-lock, numeric-pad and device bits. `init(cgFlags:keyCode:)` also drops `fn` on F1–F20: macOS sets that flag on every F-key event from every keyboard, so write F-key bindings without `.fn`. |
+| `Binding` | `Trigger` → opaque `token: String`, plus `repeatsOnHold` (default `true`) and a `scope`: `.anyKeyboard` (default), or `.nonAppleKeyboards` to remap keys Apple boards already handle in hardware without taking fn+F1 from the built-in keyboard. `matches(_:)` requires the modifiers to match exactly. `Codable`. |
 | `EventSignature` / `InputKind` | Normalized incoming event (kind, modifiers, `fromAppleKeyboard`), so match logic is pure and unit-tested. |
-| `KeyboardRegistry` / `KeyboardIdentity` | Which keyboard sent an event: the HID sender's IORegistry ID (`CGEventField` 87) → its `VendorID` / `Built-In` properties, cached per device. Apple = built-in or vendor `0x05AC` / `0x004C`; no sender (software-posted) counts as Apple so scoped bindings fail closed. |
-| `HotkeyTap` | Owns the `CGEventTap` (session tap, head-insert). `start()`/`stop()`, `setBindings(_:)`, `isTrusted`, `requestTrust()`, auto re-arm on system disable, media-key decoding, repeat suppression, and the keyUp of a swallowed press is swallowed too. `onMatch(token) -> Bool` returns `true` to swallow. |
-| `TriggerRecorder` | Captures the next key/media key while a prefs window is focused → a `Trigger` (local monitor, no extra permission). |
+| `KeyboardRegistry` / `KeyboardIdentity` | Which keyboard sent an event: the HID sender's IORegistry ID (`CGEventField` 87) → its `VendorID` / `Built-In` properties, cached per device. Apple means built-in or vendor `0x05AC` / `0x004C`. An event with no sender (posted by software) counts as Apple, so a `.nonAppleKeyboards` binding never fires on it. |
+| `HotkeyTap` | Owns the `CGEventTap` (session tap, head insert). `start()` (returns `false` if the tap cannot be created, usually for lack of Accessibility) / `stop()`, `setBindings(_:)` (safe while running), `isTrusted`, `requestTrust()`. Re-enables itself when the system disables the tap, decodes media keys, suppresses repeats for bindings that don't repeat, and swallows the keyUp of a swallowed press. `onMatch(token) -> Bool` returns `true` to swallow. |
+| `TriggerRecorder` | Captures the next key press while your own window is focused and returns it as a `Trigger`. Uses a local event monitor, so it needs no Accessibility; media keys do not always reach a local monitor. |
 
 ## Using it
 
@@ -56,9 +60,9 @@ tap.start()
 
 ## Tests
 
-`swift test` covers the pure logic — modifier mapping and binding matching. The
-tap and recorder are thin OS glue exercised manually (they need real events and
-Accessibility permission).
+`swift test` covers the pure logic: modifier mapping, F-key handling and
+binding matching. The tap and recorder are thin OS glue, tested by hand in a
+host app, since they need real events and Accessibility permission.
 
 ## Why not a SwiftBar plugin?
 
@@ -69,24 +73,28 @@ has the full [comparison with SwiftBar](https://github.com/nicholaspsmith/Status
 
 ## The menu-bar suite
 
-One of the two frameworks behind a suite of macOS menu-bar apps. They share
-one build-and-sign script and one installer, and are designed to sit in the
-same bar together.
+One of the two frameworks behind Menumon, a suite of macOS menu-bar apps that
+share one build-and-sign script and one installer and sit in the same bar
+together.
 
 | App | What it does |
 |---|---|
 | [Claude Usage](https://github.com/nicholaspsmith/claude-usage-menubar) | Claude Code plan limits, resets, and live agent sessions |
-| [Apollo Monitor](https://github.com/nicholaspsmith/apollo-monitor-menubar) | Apollo audio-interface monitor level, plus a mixer-process watchdog |
+| [Apollo Monitor](https://github.com/nicholaspsmith/apollo-monitor-menubar) | Apollo audio-interface monitor level |
 | [Battery Time](https://github.com/nicholaspsmith/battery-time-menubar) | Time remaining, power mode, and 24h usage |
-| [VPN & DNS](https://github.com/nicholaspsmith/vpn-dns-menubar) | A chameleon for Mullvad + Tailscale state, with a DNS watcher |
-| [Mac Daddy](https://github.com/nicholaspsmith/mac-daddy-menubar) | Kills media trackers, trashes stale downloads, reaps hung processes, and sweats as your process count climbs |
+| [VPN & DNS](https://github.com/nicholaspsmith/vpn-dns-menubar) | An iguana for Mullvad + Tailscale state, with a DNS watcher |
+| [Mac Daddy](https://github.com/nicholaspsmith/mac-daddy-menubar) | Kills media trackers, trashes stale downloads, reaps hung processes, watches the UA mixer engine, and sweats as your process count climbs |
 | [KeyLight](https://github.com/nicholaspsmith/keylight-menubar) | Ctrl+brightness keys remapped to keyboard backlight |
+| [Monitor Lizard](https://github.com/nicholaspsmith/monitor-lizard-menubar) | External-monitor brightness, contrast and resolution, Night Shift, and the built-in screen from dimmer than macOS allows to XDR |
+| [Homestead](https://github.com/nicholaspsmith/home-assistant-menubar) | Home Assistant dashboards and device controls in the menu |
+| [SoundChain](https://github.com/nicholaspsmith/soundchain-menubar) | One chain of Audio Unit effects over all system audio |
+| [Menu Crane](https://github.com/nicholaspsmith/menu-crane) | A ⌘Space launcher for apps, arithmetic, unit conversions and emoji |
 | [MacRecorder](https://github.com/nicholaspsmith/MacRecorder) | Screen recording with system audio |
-| [Barn](https://github.com/nicholaspsmith/menubar-barn) | Sunset: macOS 26 and earlier only. Hid a block of status icons by width; on macOS 27 use System Settings ▸ Menu Bar |
+| [Barn](https://github.com/nicholaspsmith/menubar-barn) | macOS 26 and earlier only: hides a block of status icons by width (on macOS 27, use System Settings ▸ Menu Bar) |
 
 | Framework | |
 |---|---|
-| [StatusItemKit](https://github.com/nicholaspsmith/StatusItemKit) | Status-item lifecycle, polling, menus, meter icons, the shared Icon picker |
+| [StatusItemKit](https://github.com/nicholaspsmith/StatusItemKit) | Status-item lifecycle, polling, menus, meter and mascot icons, the shared Icon picker |
 | **HotkeyKit** | CGEventTap engine for intercepting and remapping global keys |
 
 Install the whole suite on a fresh Mac with
@@ -112,7 +120,8 @@ a release titled `vX.Y.Z`. Without a new version:
 The one exception is `[no release]` in the tip commit's message, for changes
 nothing a user runs (setup, CI, developer docs): it passes every check with no
 version bump and no tag. Never tag or create a release by hand, and never
-`gh pr merge --admin` past a failing check — fix the PR. After merging, `git pull` for the tag. On a fresh clone, re-arm the hook with
+`gh pr merge --admin` past a failing check — fix the PR. After merging,
+`git pull` for the tag. On a fresh clone, re-arm the hook with
 `../StatusItemKit/scripts/release/adopt.sh --hooks-only`.
 See [StatusItemKit — Releases](https://github.com/nicholaspsmith/StatusItemKit#releases-every-push-is-one) for the whole rule.
 
