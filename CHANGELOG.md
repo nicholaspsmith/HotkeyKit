@@ -8,6 +8,20 @@ without one is refused (`[no release]` in the tip commit is the only exception).
 Versions follow [Semantic Versioning](https://semver.org/). The full rule:
 [StatusItemKit — Releases](https://github.com/nicholaspsmith/StatusItemKit#releases-every-push-is-one).
 
+## [1.1.0] - 2026-11-02
+### Added
+- `HotkeyTap.onModifiersChanged`: called with the held modifiers on every
+  modifier change (`flagsChanged`), for gestures like "hold ⌘⌥". The tap
+  listens for modifier changes only while it is set, and never swallows them.
+- `HotkeyTap.onKeyDown`: called with the keycode of every key press, matched
+  or not, before bindings are matched. Observes only.
+- `Modifiers.impliesFn(_:)` and `Modifiers.isNavigationKey(_:)`.
+### Changed
+- The fn flag is now also dropped on the navigation keys (arrows, Home, End,
+  Page Up, Page Down, Forward Delete, Help), as on F1–F20: macOS sets it on
+  every event from those keys, so ⌘⌥← now arrives as ⌘⌥←, not ⌘⌥fn←. Write
+  their bindings without `.fn`; a binding recorded with it still matches.
+
 ## [1.0.0] - 2026-09-26
 ### Added
 - A reusable global key-tap engine: one `CGEventTap` matching keyboard and

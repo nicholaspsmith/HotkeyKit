@@ -30,11 +30,11 @@ left". [KeyLight](https://github.com/nicholaspsmith/keylight-menubar),
 | Type | Purpose |
 |------|---------|
 | `Trigger` | A physical activation: `.key(CGKeyCode, Modifiers)` or `.mediaKey(Int32, Modifiers)` (NX media-key code). `Codable`. |
-| `Modifiers` | Normalized `OptionSet` (`control`/`option`/`command`/`shift`/`fn`) with `init(cgFlags:)` / `cgFlags` mapping that ignores caps-lock, numeric-pad and device bits. `init(cgFlags:keyCode:)` also drops `fn` on F1–F20: macOS sets that flag on every F-key event from every keyboard, so write F-key bindings without `.fn`. |
-| `Binding` | `Trigger` → opaque `token: String`, plus `repeatsOnHold` (default `true`) and a `scope`: `.anyKeyboard` (default), or `.nonAppleKeyboards` to remap keys Apple boards already handle in hardware without taking fn+F1 from the built-in keyboard. `matches(_:)` requires the modifiers to match exactly. `Codable`. |
+| `Modifiers` | Normalized `OptionSet` (`control`/`option`/`command`/`shift`/`fn`) with `init(cgFlags:)` / `cgFlags` mapping that ignores caps-lock, numeric-pad and device bits. `init(cgFlags:keyCode:)` also drops `fn` on F1–F20 and the navigation keys (arrows, Home, End, Page Up/Down, Forward Delete, Help): macOS sets that flag on every event from those keys, from every keyboard, so write their bindings without `.fn` (⌘⌥← arrives as ⌘⌥←, not ⌘⌥fn←). `impliesFn(_:)` says which keys those are. |
+| `Binding` | `Trigger` → opaque `token: String`, plus `repeatsOnHold` (default `true`) and a `scope`: `.anyKeyboard` (default), or `.nonAppleKeyboards` to remap keys Apple boards already handle in hardware without taking fn+F1 from the built-in keyboard. `matches(_:)` requires the modifiers to match exactly (a `.fn` in a navigation-key trigger is ignored, as on the event). `Codable`. |
 | `EventSignature` / `InputKind` | Normalized incoming event (kind, modifiers, `fromAppleKeyboard`), so match logic is pure and unit-tested. |
 | `KeyboardRegistry` / `KeyboardIdentity` | Which keyboard sent an event: the HID sender's IORegistry ID (`CGEventField` 87) → its `VendorID` / `Built-In` properties, cached per device. Apple means built-in or vendor `0x05AC` / `0x004C`. An event with no sender (posted by software) counts as Apple, so a `.nonAppleKeyboards` binding never fires on it. |
-| `HotkeyTap` | Owns the `CGEventTap` (session tap, head insert). `start()` (returns `false` if the tap cannot be created, usually for lack of Accessibility) / `stop()`, `setBindings(_:)` (safe while running), `isTrusted`, `requestTrust()`. Re-enables itself when the system disables the tap, decodes media keys, suppresses repeats for bindings that don't repeat, and swallows the keyUp of a swallowed press. `onMatch(token) -> Bool` returns `true` to swallow. |
+| `HotkeyTap` | Owns the `CGEventTap` (session tap, head insert). `start()` (returns `false` if the tap cannot be created, usually for lack of Accessibility) / `stop()`, `setBindings(_:)` (safe while running), `isTrusted`, `requestTrust()`. Re-enables itself when the system disables the tap, decodes media keys, suppresses repeats for bindings that don't repeat, and swallows the keyUp of a swallowed press. `onMatch(token) -> Bool` returns `true` to swallow. Two observers that never swallow: `onKeyDown(keyCode)` for every key press, matched or not, and `onModifiersChanged(Modifiers)` for every modifier change (`flagsChanged`, listened for only while it is set), for gestures like "hold ⌘⌥". |
 | `TriggerRecorder` | Captures the next key press while your own window is focused and returns it as a `Trigger`. Uses a local event monitor, so it needs no Accessibility; media keys do not always reach a local monitor. |
 
 ## Using it
@@ -54,14 +54,18 @@ let tap = HotkeyTap(
         return true          // swallow the original key
     }
 )
+// Optional: watch modifiers, e.g. for a "hold ⌘⌥" overlay.
+tap.onModifiersChanged = { held in overlay.isVisible = held == [.command, .option] }
+tap.onKeyDown = { _ in overlay.isVisible = false }
 if !tap.isTrusted { tap.requestTrust() }
 tap.start()
 ```
 
 ## Tests
 
-`swift test` covers the pure logic: modifier mapping, F-key handling and
-binding matching. The tap and recorder are thin OS glue, tested by hand in a
+`swift test` covers the pure logic: modifier mapping, F-key and
+navigation-key handling and binding matching, plus the tap's callback fed
+synthetic events (nothing is posted). The tap and recorder are thin OS glue, tested by hand in a
 host app, since they need real events and Accessibility permission.
 
 ## The menu-bar suite

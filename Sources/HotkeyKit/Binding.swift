@@ -33,12 +33,17 @@ public struct Binding: Codable, Hashable, Sendable {
 
     /// True iff this binding's trigger exactly matches the incoming event
     /// (same kind, same code, the *exact* tracked modifier set, and a keyboard
-    /// the binding's scope admits).
+    /// the binding's scope admits). On a navigation key a `.fn` in the trigger
+    /// is ignored, as it is on the event.
     public func matches(_ signature: EventSignature) -> Bool {
         if scope == .nonAppleKeyboards && signature.fromAppleKeyboard { return false }
         switch (trigger, signature.kind) {
         case let (.key(code, mods), .key(inCode)):
-            return code == inCode && mods == signature.modifiers
+            // Events from navigation keys arrive without fn (see
+            // `Modifiers(cgFlags:keyCode:)`); a trigger recorded before
+            // HotkeyKit dropped it there (⌘⌥fn←) still means ⌘⌥←.
+            let wanted = Modifiers.isNavigationKey(code) ? mods.subtracting(.fn) : mods
+            return code == inCode && wanted == signature.modifiers
         case let (.mediaKey(code, mods), .mediaKey(inCode)):
             return code == inCode && mods == signature.modifiers
         default:
