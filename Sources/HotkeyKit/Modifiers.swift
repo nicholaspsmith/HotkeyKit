@@ -30,14 +30,22 @@ public struct Modifiers: OptionSet, Codable, Hashable, Sendable {
         self = m
     }
 
-    /// Like `init(cgFlags:)`, but for a standard-key event: macOS sets the
-    /// secondary-fn flag on every function-key event (F1–F20) from every
-    /// keyboard, including boards with no fn key, so on those keycodes the
-    /// flag says nothing and is dropped. Bindings on F-keys are therefore
-    /// declared without `.fn`.
+    /// Like `init(cgFlags:)`, but for a standard-key event. macOS sets the
+    /// secondary-fn flag on every event from a key it counts as a function
+    /// key: F1–F20 and the navigation keys (the arrows, Home, End, Page Up,
+    /// Page Down, Forward Delete and Help), from every keyboard, including
+    /// boards with no fn key. On those keycodes the flag says nothing and is
+    /// dropped, so ⌘⌥← arrives as ⌘⌥←, not ⌘⌥fn←. Bindings on these keys are
+    /// therefore declared without `.fn`.
     public init(cgFlags: CGEventFlags, keyCode: CGKeyCode) {
         self.init(cgFlags: cgFlags)
-        if Self.isFunctionKey(keyCode) { remove(.fn) }
+        if Self.impliesFn(keyCode) { remove(.fn) }
+    }
+
+    /// Whether macOS sets the fn flag on every event from this key: an
+    /// F-key or a navigation key.
+    public static func impliesFn(_ code: CGKeyCode) -> Bool {
+        isFunctionKey(code) || isNavigationKey(code)
     }
 
     /// The ANSI keycodes of F1–F20.
@@ -45,11 +53,22 @@ public struct Modifiers: OptionSet, Codable, Hashable, Sendable {
         functionKeyCodes.contains(code)
     }
 
+    /// The arrows, Home, End, Page Up, Page Down, Forward Delete and Help.
+    public static func isNavigationKey(_ code: CGKeyCode) -> Bool {
+        navigationKeyCodes.contains(code)
+    }
+
     private static let functionKeyCodes: Set<CGKeyCode> = [
         122, 120, 99, 118, 96,      // F1–F5
         97, 98, 100, 101, 109,      // F6–F10
         103, 111, 105, 107, 113,    // F11–F15
         106, 64, 79, 80, 90,        // F16–F20
+    ]
+
+    private static let navigationKeyCodes: Set<CGKeyCode> = [
+        123, 124, 125, 126,         // ← → ↓ ↑
+        115, 119, 116, 121,         // Home, End, Page Up, Page Down
+        117, 114,                   // Forward Delete, Help
     ]
 
     /// Reconstruct `CGEventFlags` containing only the tracked modifiers.

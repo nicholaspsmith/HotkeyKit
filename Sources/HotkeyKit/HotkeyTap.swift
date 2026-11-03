@@ -15,11 +15,32 @@ import CoreGraphics
 /// `onMatch` returns `true` to consume the event (e.g. stop the OS from acting
 /// on a brightness key) or `false` to pass it through.
 ///
+/// Two observers see what the matcher doesn't: `onKeyDown` gets every key
+/// press and `onModifiersChanged` every modifier change (for a "hold ⌘⌥"
+/// gesture, say). Neither can swallow anything.
+///
 /// All access is expected on the main thread (the tap callback is delivered on
 /// the main run loop), matching the package's Swift 5 language mode.
 public final class HotkeyTap {
     /// Return `true` to swallow the event, `false` to pass it through.
     public typealias MatchHandler = (_ token: String) -> Bool
+
+    /// Called with the held modifiers on every modifier change (a
+    /// `flagsChanged` event: ⌘ going down, ⌥ coming up…). The event always
+    /// passes through. The tap listens for these only while this is set;
+    /// setting or clearing it on a running tap re-creates the tap.
+    public var onModifiersChanged: ((Modifiers) -> Void)? {
+        didSet {
+            guard isRunning, (oldValue == nil) != (onModifiersChanged == nil) else { return }
+            stop()
+            start()
+        }
+    }
+
+    /// Called with the keycode of every key press, matched or not, auto-repeats
+    /// included, before bindings are matched. Observes only: the press is
+    /// still matched, and swallowed or passed through, as usual.
+    public var onKeyDown: ((CGKeyCode) -> Void)?
 
     private var bindings: [Binding]
     private let onMatch: MatchHandler
@@ -55,19 +76,12 @@ public final class HotkeyTap {
     public func start() -> Bool {
         guard tap == nil else { return true }
 
-        // keyDown (10) + keyUp (11, to swallow the release of a swallowed
-        // press) + NX_SYSDEFINED (14, system-defined media keys).
-        let mask: CGEventMask =
-            (1 << CGEventType.keyDown.rawValue)
-            | (1 << CGEventType.keyUp.rawValue)
-            | (1 << 14)
-
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         guard let port = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
-            eventsOfInterest: mask,
+            eventsOfInterest: eventMask,
             callback: { _, type, event, refcon in
                 guard let refcon else { return Unmanaged.passUnretained(event) }
                 let me = Unmanaged<HotkeyTap>.fromOpaque(refcon).takeUnretainedValue()
@@ -84,6 +98,18 @@ public final class HotkeyTap {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
         return true
+    }
+
+    /// keyDown (10) + keyUp (11, to swallow the release of a swallowed press)
+    /// + NX_SYSDEFINED (14, system-defined media keys), and flagsChanged (12)
+    /// only while a modifier observer is set.
+    var eventMask: CGEventMask {
+        var mask: CGEventMask =
+            (1 << CGEventType.keyDown.rawValue)
+            | (1 << CGEventType.keyUp.rawValue)
+            | (1 << 14)
+        if onModifiersChanged != nil { mask |= 1 << CGEventType.flagsChanged.rawValue }
+        return mask
     }
 
     public func stop() {
@@ -104,7 +130,7 @@ public final class HotkeyTap {
 
     // MARK: - Callback
 
-    private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+    func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         let passthrough = Unmanaged.passUnretained(event)
 
         // The system disables taps that take too long; re-arm and move on.
@@ -118,11 +144,17 @@ public final class HotkeyTap {
         let kind: InputKind
         var isRepeat = false
 
-        if type == .keyUp {
+        if type == .flagsChanged {
+            // Before the media-key branch: NSEvent's `subtype` raises on a
+            // flagsChanged event.
+            onModifiersChanged?(Modifiers(cgFlags: event.flags))
+            return passthrough
+        } else if type == .keyUp {
             let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             return swallowed.release(code) ? nil : passthrough
         } else if type == .keyDown {
             let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+            onKeyDown?(code)
             kind = .key(code)
             modifiers = Modifiers(cgFlags: event.flags, keyCode: code)
             isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
